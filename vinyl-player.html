@@ -1,0 +1,182 @@
+<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Player</title><style>html,body{margin:0;background:transparent;overflow:hidden}</style></head><body><div class="vp" id="p"></div><script>(function(){try{var bc=new BroadcastChannel('vp-sync'),id=Math.random(),mine=[],op=HTMLMediaElement.prototype.play;HTMLMediaElement.prototype.play=function(){if(mine.indexOf(this)<0)mine.push(this);bc.postMessage(id);return op.apply(this,arguments)};bc.onmessage=function(e){if(e.data!==id)mine.forEach(function(a){a.pause()})}}catch(e){}})();(function(){var q=new URLSearchParams(location.search),p=document.getElementById('p');p.setAttribute('data-src',q.get('src')||'');p.setAttribute('data-title',q.get('t')||'');p.setAttribute('data-sub',q.get('s')||'');p.style.setProperty('--vp-accent','#'+(q.get('a')||'f3d58d'));p.style.setProperty('--vp-bg','#'+(q.get('b')||'2e4365'))})();(function () {
+  if (window.__vinylPlayer) { window.__vinylPlayer(); return; }
+
+  var CSS = [
+    '.vp,.vp *{box-sizing:border-box}',
+    '.vp{display:flex;align-items:center;gap:20px;width:100%;max-width:400px;padding:6px 0;',
+      'color:var(--vp-accent,#f3d58d);font-family:"Playfair Display",Georgia,serif;text-align:left}',
+    '.vp-disc{position:relative;flex:0 0 auto;width:92px;height:92px;cursor:pointer;-webkit-tap-highlight-color:transparent}',
+    '.vp-rec{position:absolute;inset:0;border-radius:50%;',
+      'background:',
+        'conic-gradient(rgba(255,255,255,0) 0deg,rgba(255,255,255,.17) 24deg,rgba(255,255,255,0) 58deg,',
+        'rgba(255,255,255,0) 180deg,rgba(255,255,255,.17) 204deg,rgba(255,255,255,0) 238deg),',
+        'repeating-radial-gradient(circle at center,#0f1014 0 1.5px,#1a1b21 1.5px 3px);',
+      'box-shadow:0 8px 20px rgba(0,0,0,.35),inset 0 0 0 1px rgba(243,213,141,.28);',
+      'animation:vp-spin 3.6s linear infinite;animation-play-state:paused}',
+    '.vp.on .vp-rec{animation-play-state:running}',
+    '.vp-label{position:absolute;left:50%;top:50%;width:40%;height:40%;transform:translate(-50%,-50%);',
+      'border-radius:50%;background:var(--vp-accent,#f3d58d)}',
+    '.vp-label:after{content:"";position:absolute;top:1.5px;left:50%;width:4px;height:4px;margin-left:-2px;',
+      'border-radius:50%;background:rgba(0,0,0,.4)}',
+    '.vp-btn{position:absolute;left:50%;top:50%;width:24px;height:24px;margin:-12px 0 0 -12px;padding:0;',
+      'border:0;border-radius:50%;background:var(--vp-bg,#2e4365);color:var(--vp-accent,#f3d58d);',
+      'display:grid;place-items:center;cursor:pointer;outline:0;transition:transform .15s}',
+    '.vp-disc:hover .vp-btn{transform:scale(1.12)}',
+    '.vp-btn:focus-visible{box-shadow:0 0 0 2px var(--vp-accent,#f3d58d)}',
+    '.vp-btn svg{display:block;width:10px;height:10px;fill:currentColor}',
+    '.vp-info{flex:1;min-width:0}',
+    '.vp-title{font-size:20px;line-height:1.25;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}',
+    '.vp-sub{margin-top:3px;font:11px/1.3 system-ui,-apple-system,"Segoe UI",sans-serif;',
+      'letter-spacing:.2em;text-transform:uppercase;opacity:.6}',
+    '.vp-row{display:flex;align-items:center;gap:12px;margin-top:12px}',
+    '.vp-bar{position:relative;flex:1;height:16px;cursor:pointer;touch-action:none;outline:0}',
+    '.vp-bar:before{content:"";position:absolute;left:0;right:0;top:7px;height:2px;border-radius:2px;',
+      'background:var(--vp-accent,#f3d58d);opacity:.25}',
+    '.vp-fill{position:absolute;left:0;top:7px;height:2px;width:0;border-radius:2px;background:var(--vp-accent,#f3d58d)}',
+    '.vp-knob{position:absolute;top:4px;left:0;width:8px;height:8px;margin-left:-4px;border-radius:50%;',
+      'background:var(--vp-accent,#f3d58d);transform:scale(0);transition:transform .15s}',
+    '.vp-bar:hover .vp-knob,.vp-bar.drag .vp-knob,.vp-bar:focus-visible .vp-knob{transform:scale(1)}',
+    '.vp-time{font:11px/1 system-ui,-apple-system,"Segoe UI",sans-serif;opacity:.7;white-space:nowrap;',
+      'font-variant-numeric:tabular-nums}',
+    '@keyframes vp-spin{to{transform:rotate(360deg)}}',
+    '@media (prefers-reduced-motion:reduce){.vp-rec{animation-duration:14s}}'
+  ].join('');
+
+  var ICON_PLAY  = '<svg viewBox="0 0 10 10"><path d="M2.2 0.8 9 5 2.2 9.2z"/></svg>';
+  var ICON_PAUSE = '<svg viewBox="0 0 10 10"><rect x="1.5" y="1" width="2.6" height="8"/><rect x="5.9" y="1" width="2.6" height="8"/></svg>';
+
+  var all = [];
+
+  function fmt(t) {
+    if (!isFinite(t) || t < 0) t = 0;
+    t = Math.floor(t);
+    var s = t % 60;
+    return Math.floor(t / 60) + ':' + (s < 10 ? '0' : '') + s;
+  }
+
+  // link share Google Drive -> daftar link unduh langsung (dicoba berurutan kalau yang pertama gagal)
+  function srcsOf(u) {
+    var m = u.match(/drive\.google\.com\/file\/d\/([\w-]+)/) ||
+            u.match(/drive\.google\.com\/(?:open|uc)\?(?:[^#]*&)?id=([\w-]+)/);
+    return m ? [
+      'https://drive.google.com/uc?export=download&id=' + m[1],
+      'https://drive.usercontent.google.com/download?id=' + m[1] + '&export=download&confirm=t'
+    ] : [u];
+  }
+
+  function setup(el) {
+    el.setAttribute('data-vp', '1');
+    el.innerHTML =
+      '<div class="vp-disc"><div class="vp-rec"><i class="vp-label"></i></div>' +
+        '<button type="button" class="vp-btn" aria-label="Play"></button></div>' +
+      '<div class="vp-info"><div class="vp-title"></div><div class="vp-sub"></div>' +
+        '<div class="vp-row"><div class="vp-bar" role="slider" tabindex="0" aria-label="Posisi lagu">' +
+          '<i class="vp-fill"></i><i class="vp-knob"></i></div><span class="vp-time">0:00 / 0:00</span></div></div>';
+
+    var q = function (s) { return el.querySelector(s); };
+    var disc = q('.vp-disc'), btn = q('.vp-btn'), bar = q('.vp-bar'),
+        fill = q('.vp-fill'), knob = q('.vp-knob'), time = q('.vp-time');
+    q('.vp-title').textContent = el.getAttribute('data-title') || '';
+    q('.vp-sub').textContent = el.getAttribute('data-sub') || '';
+    btn.innerHTML = ICON_PLAY;
+
+    var raw = (el.getAttribute('data-src') || '').trim();
+    var placeholder = !raw || /GANTI/i.test(raw);
+    var audio = new Audio();
+    audio.preload = 'metadata';
+    var cands = placeholder ? [] : srcsOf(raw), ci = 0;
+    if (cands.length) audio.src = cands[0];
+    el._vp = audio;
+    all.push(audio);
+
+    var dragging = false, dragRatio = 0, raf = 0, failed = false;
+    if (placeholder) { failed = true; time.textContent = 'ganti link dulu'; }
+
+    function ratio() {
+      return audio.duration > 0 ? Math.min(1, audio.currentTime / audio.duration) : 0;
+    }
+    function draw() {
+      if (failed) return;
+      var r = dragging ? dragRatio : ratio();
+      fill.style.width = (r * 100) + '%';
+      knob.style.left = (r * 100) + '%';
+      var cur = dragging ? dragRatio * (audio.duration || 0) : audio.currentTime;
+      time.textContent = fmt(cur) + ' / ' + fmt(audio.duration);
+      bar.setAttribute('aria-valuenow', Math.round(r * 100));
+    }
+    function loop() { draw(); raf = requestAnimationFrame(loop); }
+
+    function toggle() {
+      if (failed) return;
+      if (audio.paused) {
+        for (var i = 0; i < all.length; i++) if (all[i] !== audio) all[i].pause();
+        var p = audio.play();
+        if (p && p.catch) p.catch(function () {});
+      } else {
+        audio.pause();
+      }
+    }
+    disc.addEventListener('click', toggle);
+
+    audio.addEventListener('play', function () {
+      el.classList.add('on');
+      btn.innerHTML = ICON_PAUSE; btn.setAttribute('aria-label', 'Pause');
+      cancelAnimationFrame(raf); loop();
+    });
+    audio.addEventListener('pause', function () {
+      el.classList.remove('on');
+      btn.innerHTML = ICON_PLAY; btn.setAttribute('aria-label', 'Play');
+      cancelAnimationFrame(raf); draw();
+    });
+    audio.addEventListener('ended', function () { audio.currentTime = 0; draw(); });
+    ['loadedmetadata', 'durationchange', 'seeked'].forEach(function (n) { audio.addEventListener(n, draw); });
+    audio.addEventListener('error', function () {
+      if (ci < cands.length - 1) { ci++; audio.src = cands[ci]; audio.load(); return; }
+      failed = true; time.textContent = 'audio tidak ditemukan';
+    });
+
+    // seek: klik atau geser di garis
+    function ratioFrom(e) {
+      var r = bar.getBoundingClientRect();
+      return Math.max(0, Math.min(1, (e.clientX - r.left) / r.width));
+    }
+    bar.addEventListener('pointerdown', function (e) {
+      if (!(audio.duration > 0)) return;
+      dragging = true; dragRatio = ratioFrom(e);
+      bar.classList.add('drag'); bar.setPointerCapture(e.pointerId); draw();
+    });
+    bar.addEventListener('pointermove', function (e) {
+      if (!dragging) return;
+      dragRatio = ratioFrom(e); draw();
+    });
+    function endDrag() {
+      if (!dragging) return;
+      dragging = false; bar.classList.remove('drag');
+      audio.currentTime = dragRatio * audio.duration; draw();
+    }
+    bar.addEventListener('pointerup', endDrag);
+    bar.addEventListener('pointercancel', function () { dragging = false; bar.classList.remove('drag'); draw(); });
+    bar.addEventListener('keydown', function (e) {
+      if (!(audio.duration > 0)) return;
+      if (e.key === 'ArrowRight') { audio.currentTime = Math.min(audio.duration, audio.currentTime + 5); e.preventDefault(); }
+      if (e.key === 'ArrowLeft')  { audio.currentTime = Math.max(0, audio.currentTime - 5); e.preventDefault(); }
+    });
+
+    draw();
+  }
+
+  function init() {
+    if (!document.getElementById('vp-css')) {
+      var st = document.createElement('style');
+      st.id = 'vp-css'; st.textContent = CSS;
+      document.head.appendChild(st);
+    }
+    var els = document.querySelectorAll('.vp:not([data-vp])');
+    for (var i = 0; i < els.length; i++) setup(els[i]);
+  }
+
+  window.__vinylPlayer = init;
+  init();
+  document.addEventListener('DOMContentLoaded', init);
+  window.addEventListener('load', init);
+})();</script></body></html>
